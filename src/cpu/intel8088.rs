@@ -154,14 +154,14 @@ impl CPUArch for CPU {
     //IDK how long this will work
     fn get_reg8(&self, reg: u8) -> Self::Num {
         match reg {
-            0b000 => self.ax & 0xFF00,
-            0b001 => self.cx & 0xFF00,
-            0b010 => self.dx & 0xFF00,
-            0b011 => self.bx & 0xFF00,
-            0b100 => (self.ax & 0x00FF) << 8,
-            0b101 => (self.cx & 0x00FF) << 8,
-            0b110 => (self.dx & 0x00FF) << 8,
-            0b111 => (self.bx & 0x00FF) << 8,
+            0b000 => self.ax & 0x00FF,
+            0b001 => self.cx & 0x00FF,
+            0b010 => self.dx & 0x00FF,
+            0b011 => self.bx & 0x00FF,
+            0b100 => (self.ax & 0xFF00) >> 8,
+            0b101 => (self.cx & 0xFF00) >> 8,
+            0b110 => (self.dx & 0xFF00) >> 8,
+            0b111 => (self.bx & 0xFF00) >> 8,
             _ => unreachable!("Invalid register {:b}", reg),
         }
     }
@@ -222,39 +222,67 @@ impl CPUArch for CPU {
     }
 
     //A PIOR implementação que eu já fiz, mas fds, funciona
-    fn read_word(pos: u16, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> Self::Num {
-        let pos = pos as usize;
+    fn read_word(addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> Self::Num {
         let data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> = ram.lock().unwrap();
         let mut buf: [u8; 2] = [0u8; 2];
-        buf.copy_from_slice(&data[pos..pos + 2]);
+        buf.copy_from_slice(&data[addr..addr + 2]);
 
         u16::from_le_bytes(buf)
         //RIP MutexGuard
     }
 
-    fn read_byte(pos: u16, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> u8 {
+    fn read_byte(addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> u8 {
         let data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> = ram.lock().unwrap();
-        data[pos as usize]
+        data[addr]
     }
 
-    fn decode_rm(&mut self, rm: u8, prefetch: [u8; 4]) -> u16 {
-        match rm {
-            0b000 => self.bx.wrapping_add(self.si),
-            0b001 => self.bx.wrapping_add(self.di),
-            0b010 => self.bp.wrapping_add(self.si),
-            0b011 => self.bp.wrapping_add(self.di),
-            0b100 => self.si,
-            0b101 => self.di,
-            0b110 => {
+    fn write_word(content: u16, addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) {
+        let value: [u8; 2] = content.to_le_bytes();
+
+        let mut data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> = ram.lock().unwrap();
+
+        //Tinha forma melhor de passar esses dados, mas a minha
+        //preguiça de pesquisar como passar com offset relativo
+        //é maior
+        data[addr] = value[0];
+        data[addr + 1] = value[1];
+
+        //RIP MutexGuard
+    }
+    fn write_byte(content: u8, addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) {
+        let mut data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> = ram.lock().unwrap();
+
+        data[addr] = content;
+        //RIP MutexGuard
+    }
+
+    fn decode_rm(&mut self, bmod: u8, rm: u8, prefetch: [u8; 4], disp: i16) -> usize {
+        let (segment, offset): (u16, u16) = match rm {
+            0b110 if bmod == 0b00 => {
+                //Nessa operação, o processador SABE que precisa puxar uma WORD logo após o modR/M
                 self.ip = self.ip.wrapping_add(2);
 
                 let pos: u16 = u16::from_le_bytes([prefetch[2], prefetch[3]]);
 
-                pos
+                (self.ds, pos)
             }
-            0b111 => self.bx,
+
+            0b000 => (self.ds, self.bx.wrapping_add(self.si)),
+            0b001 => (self.ds, self.bx.wrapping_add(self.di)),
+            0b010 => (self.ss, self.bp.wrapping_add(self.si)),
+            0b011 => (self.ss, self.bp.wrapping_add(self.di)),
+            0b100 => (self.ds, self.si),
+            0b101 => (self.ds, self.di),
+            0b110 => (self.ss, self.bp),
+            0b111 => (self.ds, self.bx),
             _ => unreachable!("invalid RM in {:b} {:b}", prefetch[0], prefetch[1]),
-        }
+        };
+
+        let final_offset = offset.wrapping_add(disp as u16);
+
+        let physical_addr: u32 = ((segment as u32) << 4) + (final_offset as u32);
+
+        (physical_addr as usize) % RAM_SIZE
     }
 
     fn decode(&mut self, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) {
@@ -276,7 +304,7 @@ impl CPUArch for CPU {
         };
 
         match prefetch[0] {
-            //mov reg16, reg16 - 100010XX
+            //mov reg, reg - 100010DW
             inst if (inst & 0b111111_00) == 0b100010_00 => {
                 println!("instrução mov reg16, reg16");
 
@@ -289,13 +317,14 @@ impl CPUArch for CPU {
 
                 let (bmod, reg, rm) = CPU::extract_mod_rm(prefetch[1]);
 
+                //Leu o OPCODE mais o ModR/M
                 self.ip = self.ip.wrapping_add(2);
 
                 match bmod {
                     0b00 => {
                         if bit_w == 1 {
                             if bit_d == 1 {
-                                let pos: u16 = self.decode_rm(rm, prefetch);
+                                let pos: usize = self.decode_rm(bmod, rm, prefetch, 0);
 
                                 let value: u16 = Self::read_word(pos, ram);
 
@@ -303,24 +332,13 @@ impl CPUArch for CPU {
                             } else {
                                 let value = self.get_reg16(reg);
 
-                                let value: [u8; 2] = value.to_le_bytes();
+                                let addr: usize = self.decode_rm(bmod, rm, prefetch, 0);
 
-                                let addr: u16 = self.decode_rm(rm, prefetch);
-
-                                let mut data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> =
-                                    ram.lock().unwrap();
-
-                                //Tinha forma melhor de passar esses dados, mas a minha
-                                //preguiça de pesquisar como passar com offset relativo
-                                //é maior
-                                data[addr as usize] = value[0];
-                                data[(addr as usize) + 1] = value[1];
-
-                                //RIP MutexGuard
+                                Self::write_word(value, addr, ram);
                             }
                         } else {
                             if bit_d == 1 {
-                                let pos: u16 = self.decode_rm(rm, prefetch);
+                                let pos: usize = self.decode_rm(bmod, rm, prefetch, 0);
 
                                 let value: u8 = Self::read_byte(pos, ram);
 
@@ -328,28 +346,58 @@ impl CPUArch for CPU {
                             } else {
                                 let value: u16 = self.get_reg8(reg);
 
-                                let addr: u16 = self.decode_rm(rm, prefetch);
+                                let addr: usize = self.decode_rm(bmod, rm, prefetch, 0);
 
-                                let mut data: MutexGuard<'_, Box<[u8; RAM_SIZE]>> =
-                                    ram.lock().unwrap();
-
-                                data[addr as usize] = value as u8;
-                                //RIP MutexGuard
+                                Self::write_byte(value as u8, addr, ram);
                             }
                         }
                     }
                     0b01 => {
+                        //Lê o Disp8 logo a frente da instrução
+                        self.ip = self.ip.wrapping_add(1);
+                        let disp8: i16 = (prefetch[2] as i8) as i16;
+                        let addr: usize = self.decode_rm(bmod, rm, prefetch, disp8);
+                        
                         if bit_w == 1 {
-                            if bit_d == 1 { todo!() } else { todo!() }
+                            if bit_d == 1 {
+                                let value = Self::read_word(addr, ram);
+                                self.set_reg16(reg, value);
+                            } else {
+                                let content = self.get_reg16(reg);
+                                Self::write_word(content, addr, ram);
+                            }
                         } else {
-                            if bit_d == 1 { todo!() } else { todo!() }
+                            if bit_d == 1 {
+                                let value: u8 = Self::read_byte(addr, ram);
+                                self.set_reg8(reg, value as u16);
+                            } else {
+                                let content: u16 = self.get_reg8(reg);
+                                Self::write_byte(content as u8, addr, ram);
+                            }
                         }
                     }
                     0b10 => {
+                        //Lê o Displacement logo a frente da instrução
+                        self.ip = self.ip.wrapping_add(2);
+                        let disp16: i16 = i16::from_le_bytes([prefetch[2], prefetch[3]]);
+                        let addr: usize = self.decode_rm(bmod, rm, prefetch, disp16);
+
                         if bit_w == 1 {
-                            if bit_d == 1 { todo!() } else { todo!() }
+                            if bit_d == 1 {
+                                let value: u16 = Self::read_word(addr, ram);
+                                self.set_reg16(reg, value);
+                            } else {
+                                let content: u16 = self.get_reg16(reg);
+                                Self::write_word(content, addr, ram);
+                            }
                         } else {
-                            if bit_d == 1 { todo!() } else { todo!() }
+                            if bit_d == 1 {
+                                let value: u8 = Self::read_byte(addr, ram);
+                                self.set_reg8(reg, value as u16);
+                            } else {
+                                let content: u16  = self.get_reg8(reg);
+                                Self::write_byte(content as u8, addr, ram);
+                            }
                         }
                     }
                     0b11 => {
@@ -395,6 +443,7 @@ impl CPUArch for CPU {
                     self.ip = self.ip.wrapping_add(2);
                 }
             }
+
             _ => {
                 println!("{:b}", prefetch[0]);
                 unimplemented!("Calma pae")
