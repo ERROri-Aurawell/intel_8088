@@ -1,0 +1,9 @@
+     1                                  cpu 8086
+     2                                  bits 16
+     3                                  
+     4                                  start:
+     5 00000000 B8 0E 00                     mov ax, 0x0E
+     6 00000003 89 C3                        mov bx, ax
+     7 00000005 89 D9                        mov cx, bx
+     8 00000007 89 C8                        mov ax, cx
+     9                                      

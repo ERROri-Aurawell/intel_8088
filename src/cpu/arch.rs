@@ -1,0 +1,33 @@
+use crate::RAM_SIZE;
+use std::sync::Mutex;
+
+pub trait RegArch {}
+
+pub trait CPUArch {
+    type Reg: RegArch;
+    type Num;
+
+    fn new() -> Self;
+
+    fn set(&mut self, reg: Self::Reg, data: Self::Num);
+
+    fn get(&self, reg: Self::Reg) -> Self::Num;
+
+    fn get_reg8(&self, reg: u8) -> Self::Num;
+    fn get_reg16(&self, reg: u8) -> Self::Num;
+
+    fn set_reg8(&mut self, reg: u8, value: Self::Num);
+    fn set_reg16(&mut self, reg: u8, value: Self::Num);
+
+    fn dump(&self);
+
+    fn extract_mod_rm(byte: u8) -> (u8, u8, u8);
+
+    fn read_word(pos: u16, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> Self::Num;
+
+    fn read_byte(pos: u16, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> u8;
+
+    fn decode_rm(&mut self, rm: u8, prefetch: [u8; 4]) -> u16;
+
+    fn decode(&mut self, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>);
+}
