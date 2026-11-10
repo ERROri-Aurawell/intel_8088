@@ -22,7 +22,7 @@ pub trait CPUArch {
     fn dump(&self);
 
     fn extract_mod_rm(byte: u8) -> (u8, u8, u8);
-    fn decode_rm(&mut self, bmod:u8, rm: u8, prefetch: [u8; 4], disp: i16) -> usize;
+    fn decode_rm(&mut self, bmod:u8, rm: u8, prefetch: [u8; 4], disp: i16) -> (usize, bool);
 
     fn read_word(addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> Self::Num;
     fn read_byte(addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>) -> u8;
