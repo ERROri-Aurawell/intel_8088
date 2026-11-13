@@ -30,5 +30,15 @@ pub trait CPUArch {
     fn write_word(content : u16, addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>);
     fn write_byte(content: u8, addr: usize, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>);
 
+    fn tick(&mut self, count: u64);
+
+    fn get_ticks(&self) -> u64;
+
+    fn clear_tick(&mut self);
+
+    fn get_ip(&self) -> u16;
+
+    fn ip_inc(&mut self, quant: u16);
+
     fn decode(&mut self, ram: &'static Mutex<Box<[u8; RAM_SIZE]>>);
 }

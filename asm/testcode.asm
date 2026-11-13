@@ -5,5 +5,5 @@ start:
     mov ax, 0x0E
     mov bx, ax
     mov cx, bx
-    mov ax, cx
+    mov dx, cx
     
