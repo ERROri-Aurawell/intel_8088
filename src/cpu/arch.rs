@@ -19,6 +19,9 @@ pub trait CPUArch {
     fn set_reg8(&mut self, reg: u8, value: Self::Num);
     fn set_reg16(&mut self, reg: u8, value: Self::Num);
 
+    fn get_sreg(&self, reg: u8) -> Self::Num;
+    fn set_sreg(&mut self, reg:u8, value: Self::Num);
+
     fn dump(&self);
 
     fn extract_mod_rm(byte: u8) -> (u8, u8, u8);

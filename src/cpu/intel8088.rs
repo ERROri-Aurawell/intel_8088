@@ -1,3 +1,6 @@
+#![allow(clippy::unusual_byte_groupings)]
+#![allow(clippy::upper_case_acronyms)]
+
 use std::sync::{Mutex, MutexGuard};
 
 use crate::cpu::arch::{CPUArch, RegArch};
@@ -215,6 +218,26 @@ impl CPUArch for CPU {
         }
     }
 
+    fn get_sreg(&self, reg: u8) -> Self::Num {
+        match reg {
+            0b000 => self.es,
+            0b001 => self.cs,
+            0b010 => self.ss,
+            0b011 => self.ds,
+            _ => panic!("Invalid register {:b}", reg),
+        }
+    }
+
+    fn set_sreg(&mut self, reg: u8, value: Self::Num) {
+        match reg {
+            0b000 => self.es = value,
+            0b001 => self.cs = value,
+            0b010 => self.ss = value,
+            0b011 => self.ds = value,
+            _ => panic!("Invalid register {:b}", reg),
+        }
+    }
+
     fn dump(&self) {
         //println!("DUMP :\n{:#x?}", self);
 
@@ -343,9 +366,9 @@ impl CPUArch for CPU {
         self.cycles = 0;
     }
 
-     fn get_ip(&self) -> u16 {
+    fn get_ip(&self) -> u16 {
         self.ip
-     }
+    }
 
     fn ip_inc(&mut self, quant: u16) {
         self.ip = self.ip.wrapping_add(quant);
@@ -371,7 +394,7 @@ impl CPUArch for CPU {
         match prefetch[0] {
             //mov 100010_DW
             inst if (inst & 0b111111_00) == 0b100010_00 => {
-                let tick: u64 = mov_100010_dw(self, prefetch, &ram);
+                let tick: u64 = mov_100010_dw(self, prefetch, ram);
 
                 self.tick(tick);
             }

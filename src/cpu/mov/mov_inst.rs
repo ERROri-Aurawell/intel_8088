@@ -185,20 +185,16 @@ pub fn mov_100010_dw(
     match bmod {
         0b00 => {
             if bit_w == 1 {
+                let (pos, _) = cpu.decode_rm(bmod, rm, prefetch, 0);
+                
                 if bit_d == 1 {
-                    let (pos, _) = cpu.decode_rm(bmod, rm, prefetch, 0);
-
                     let value: u16 = CPU::read_word(pos, ram);
-
                     cpu.set_reg16(reg, value);
 
                     8
                 } else {
                     let value = cpu.get_reg16(reg);
-
-                    let (addr, _) = cpu.decode_rm(bmod, rm, prefetch, 0);
-
-                    CPU::write_word(value, addr, ram);
+                    CPU::write_word(value, pos, ram);
 
                     9
                 }
@@ -255,7 +251,7 @@ pub fn mov_100010_dw(
             }
         }
         0b10 => {
-            //Lê o Displacement logo a frente da instrução
+            //Lê o Disp16 logo a frente da instrução
             cpu.ip_inc(2);
             let disp16: i16 = i16::from_le_bytes([prefetch[2], prefetch[3]]);
             let (addr, _) = cpu.decode_rm(bmod, rm, prefetch, disp16);
@@ -326,7 +322,7 @@ pub fn mov_101000_dw(
     let addr: usize = {
         let relative_addr: u16 = u16::from_le_bytes([prefetch[1], prefetch[2]]);
         //self.ds
-        (((cpu.get(Reg16::Ds) as u32) << 4) + (relative_addr as u32)) as usize
+        (((cpu.get_sreg(0b011) as u32) << 4) + (relative_addr as u32)) as usize
     };
 
     cpu.ip_inc(3);
@@ -355,30 +351,89 @@ pub fn mov_101000_dw(
     10
 }
 
-pub fn mov_10001110(
+pub fn mov_100011_d_0(
     cpu: &mut CPU,
     prefetch: [u8; 4],
     ram: &'static Mutex<Box<[u8; 1048576]>>,
 ) -> u64 {
+    //MOV r/m16, Sreg
     //MOV Sreg, r/m16
     let (bmod, reg, rm) = CPU::extract_mod_rm(prefetch[1]);
 
     //Leu o OPCODE mais o ModR/M
     cpu.ip_inc(2);
 
-    todo!();
-}
+    let bit_d = (prefetch[0] & 0b000000_1_0) >> 1;
 
-pub fn mov_10001100(
-    cpu: &mut CPU,
-    prefetch: [u8; 4],
-    ram: &'static Mutex<Box<[u8; 1048576]>>,
-) -> u64 {
-    //MOV r/m16, Sreg
-    let (bmod, reg, rm) = CPU::extract_mod_rm(prefetch[1]);
+    let cycles: u64 = {
+        match bmod {
+            0b00 => {
+                let (pos, _) = cpu.decode_rm(bmod, rm, prefetch, 0);
+                
+                if bit_d == 1 {
+                    let value: u16 = CPU::read_word(pos, ram);
 
-    //Leu o OPCODE mais o ModR/M
-    cpu.ip_inc(2);
+                    cpu.set_sreg(reg, value);
 
-    todo!();
+                    8
+                } else {
+                    let content: u16 = cpu.get_sreg(reg);
+                    CPU::write_word(content, pos, ram);
+
+                    9
+                }
+            }
+            0b01 => {
+                //Lê o Disp8 logo a frente da instrução
+                cpu.ip_inc(1);
+                let disp8: i16 = (prefetch[2] as i8) as i16;
+                let (addr, _) = cpu.decode_rm(bmod, rm, prefetch, disp8);
+
+                if bit_d == 1 {
+                    let value = CPU::read_word(addr, ram);
+                    cpu.set_sreg(reg, value);
+
+                    8
+                } else {
+                    let content: u16 = cpu.get_sreg(reg);
+                    CPU::write_word(content, addr, ram);
+
+                    9
+                }
+            }
+            0b10 => {
+                //Lê o Disp16 logo a frente da instrução
+                cpu.ip_inc(2);
+                let disp16: i16 = i16::from_le_bytes([prefetch[2], prefetch[3]]);
+                let (addr, _) = cpu.decode_rm(bmod, rm, prefetch, disp16);
+
+                if bit_d == 1 {
+                    let value = CPU::read_word(addr, ram);
+                    cpu.set_sreg(reg, value);
+
+                    8
+                } else {
+                    let content: u16 = cpu.get_sreg(reg);
+                    CPU::write_word(content, addr, ram);
+
+                    9
+                }
+            }
+            0b11 => {
+                if bit_d == 1 {
+                    // Reg -> Sreg
+                    let value = cpu.get_reg16(rm);
+                    cpu.set_sreg(reg, value);
+                } else {
+                    let value = cpu.get_sreg(reg);
+                    cpu.set_reg16(rm, value);
+                }
+
+                2
+            }
+            _ => unreachable!("Idk what happend : {:b} {:b}", prefetch[0], prefetch[1]),
+        }
+    };
+
+    cycles
 }
