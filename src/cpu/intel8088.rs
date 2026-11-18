@@ -419,6 +419,12 @@ impl CPUArch for CPU {
                 self.tick(tick);
             }
 
+            inst if (inst & 0b111111_0_1) == 0b100011_0_0 => {
+                let tick= mov_100011_d_0(self, prefetch, ram);
+
+                self.tick(tick)
+            }
+
             _ => {
                 todo!(
                     "Unknown instruction : {:#b}. Position: {}",
